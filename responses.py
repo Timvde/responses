@@ -130,26 +130,28 @@ def get_wrapped(func, wrapper_template, evaldict):
     # Preserve the argspec for the wrapped function so that testing
     # tools such as pytest can continue to use their fixture injection.
     is_bound_method = hasattr(func, "__self__")
-    if six.PY34:
-        full_signature = inspect.signature(func)
-        parameters = full_signature.parameters.values()
-        signature = str(full_signature)
-        if is_bound_method:
-            signature = signature[:1] + 'self, ' + signature[1:]
-        callargs = str(full_signature.replace(
-            parameters=(inspect.Parameter(p.name, p.kind) for p in parameters))
-        )
-    else:
-        if six.PY2:
-            args, a, kw, defaults = inspect.getargspec(func)
-        else:
-            args, a, kw, defaults, kwonlyargs, kwonlydefaults, annotations = inspect.getfullargspec(
-                func
-            )
+    if six.PY2:
+        args, a, kw, defaults = inspect.getargspec(func)
         signature = inspect.formatargspec(args, a, kw, defaults)
         if is_bound_method:
             args = args[1:]  # Omit 'self'
         callargs = inspect.formatargspec(args, a, kw, None)
+    else:
+        full_signature = inspect.signature(func)
+        parameters = full_signature.parameters.values()
+        # Remove return type and type annotations
+        full_signature = full_signature.replace(
+            return_annotation=inspect.Signature.empty,
+            parameters=(inspect.Parameter(p.name, p.kind, default=p.default) for p in parameters))
+        signature = str(full_signature)
+        if is_bound_method:
+            # In contrast to formatargspect, inspect.signature drops self for
+            # bound arguments
+            signature = signature[:1] + 'self, ' + signature[1:]
+        # Remove default arguments
+        callargs = str(full_signature.replace(
+            parameters=(inspect.Parameter(p.name, p.kind) for p in parameters))
+        )
 
     ctx = {"signature": signature, "funcargs": callargs}
     six.exec_(wrapper_template % ctx, evaldict)
